@@ -1,5 +1,10 @@
 <?xml version='1.0' encoding='@ENCODING@' ?>
 <!DOCTYPE PHPDOC [
+
+<!-- Entities collected with entities.php -->
+<!ENTITY % manual-entities SYSTEM "./.entities.ent">
+%manual-entities;
+
 <!-- Add translated specific definitions and snippets -->
 @TRANSLATION_ONLY_INCL_BEGIN@
 <!ENTITY % language-defs     SYSTEM "../@LANGDIR@/language-defs.ent">
