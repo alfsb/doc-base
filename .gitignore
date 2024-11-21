@@ -2,8 +2,6 @@
 .manual.xml
 .entities.ent
 .revcheck.json
-install-unix.xml
-install-win.xml
 manual.xml
 version.xml
 sources.xml

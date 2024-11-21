@@ -739,11 +739,12 @@ if ($ac['HISTORY_FILE'] === 'yes') {
 globbetyglob("{$ac['basedir']}/scripts", 'make_scripts_executable');
 
 {
-    $cmd  = escapeshellarg( $ac['PHP'] );
-    $cmd .= ' ' . escapeshellarg( __DIR__ . '/scripts/entities.php' );
-    $cmd .= ' ' . escapeshellarg( $ac['ROOTDIR'] . '/en/entities' );
+    $cmd[] = escapeshellarg( $ac['PHP'] );
+    $cmd[] = escapeshellarg( __DIR__ . '/scripts/entities.php' );
+    $cmd[] = escapeshellarg( $ac['ROOTDIR'] . '/en/entities' );
     if ( $ac['LANG'] != 'en' )
-        $cmd .= ' ' . escapeshellarg( $ac['ROOTDIR'] . '/' . $ac['LANG'] . '/entities' );
+        $cmd[] = escapeshellarg( $ac['ROOTDIR'] . '/' . $ac['LANG'] . '/entities' );
+    $cmd = implode( ' ' , $cmd );
     passthru( $cmd );
 }
 
