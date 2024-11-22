@@ -194,7 +194,7 @@ function dump( string $filename , array $entities )
 function shouldInline( DOMDocument $dom ) : bool
 {
     // Pure text entities CANNOT be SYSTEMed (or libxml fails).
-    // But entities that CONTAINS elements NEED to be SYSTEMed
+    // But entities that CONTAINS elements need to be SYSTEMed
     // to avoid quotation madness.
 
     // Why libxml/w3c? WHY?
@@ -202,15 +202,6 @@ function shouldInline( DOMDocument $dom ) : bool
     $xpath = new DomXPath( $dom );
     $elems = $xpath->query( "child::*" );
     return ( $elems->length == 0 );
-}
-
-function shouldInlineRecurse( DOMNode $node ) : bool
-{
-    if ( $node->nodeType == XML_ELEMENT_NODE )
-        return true;
-    foreach ( $node->childNodes as $node )
-        return shouldInlineRecurse( $node );
-
 }
 
 function verifyOverrides( bool $outputDetail )

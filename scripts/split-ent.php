@@ -82,5 +82,7 @@ foreach( $entities as $name => $text )
 {
     $file = "$outdir/$name.$ext";
     file_put_contents( $file , $text );
-    print "Generated $file\n";
 }
+
+$total = count( $entities );
+print "Generated $total files.\n";
