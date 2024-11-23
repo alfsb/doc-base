@@ -1,5 +1,4 @@
-<?php
-/*
+<?php /*
 +----------------------------------------------------------------------+
 | Copyright (c) 1997-2023 The PHP Group                                |
 +----------------------------------------------------------------------+
@@ -16,16 +15,55 @@
 | Description: Collect individual entities into an entities.ent file.  |
 +----------------------------------------------------------------------+
 
-# Conventions
+# Mental model, or things that I would liked to know 20 years prior
 
-* `.dnt`: Simple text, "do not translate" file;
-* `.txt`: Simple text, translatable, untracked file;
-* `.xml`: Full XML, translatable, tracked file.
+XML Entity processing has more in common with DOMDocumentFragment than
+DOMElement. In other words, simple text and multi roots XML entities
+are valid <!ENTITY> contents, whereas they are not valid XML documents.
 
-Each entitiesDir is read in order, overwriting previous defined
-entities with new ones (this is inverse of XML processing, where
-overwriting entities are ignored).
+Also, namespaces do not automatically "cross" between a parent
+document and their includes, even if they are included in the same
+file, as local textual entities. They are, for all intended purposes,
+separated documents, with separated namespaces and have *expected*
+different *default* namespaces.
+
+So each one of, possibly multiple, "root" XML elements inside an
+fragment need to be annotated with default namespace, even if the
+"root" element occurs surrounded by text. For example:
+
+- "text<tag>text</tag>", need one namespace, or it is invalid, and;
+- "<tag></tag><tag></tag", need TWO namespaces, or it is also invalid.
+
+# Individual tracked entities, or `.xml` files at `entities/`
+
+As explained above, the individual entity contents are not really
+valid XML *documents*, they are only at most valid XML *fragments*.
+
+Yet, individual entities are stored in entities/ as .xml files, for
+two reasons: first, text editors in general can highlights XML syntax,
+and second, this allows normal revision tracking on then, without
+requiring weird changes on `revcheck.php`.
+
+# Small entities, group tracked (future)
+
+For very small textual entities, down to simple text words, that may
+never change, having tracking for each instance is an overkill.
+
+It's planned to have new `manual.ent` and `website.ent` files
+on each doc language, that internally are valid XML documents and
+also replicates namespace declarations used on manual.xml.in, so
+it will possible migrate the current <!ENTITY> infrastructure
+to something that is more consumable for XML toolage (and will
+avoid most of it not all XML namespacing hell).
+
+These small files are to be splited into entities/ as individial
+.tmp text files, for normal inclusion on manual.
+
 */
+
+ini_set( 'display_errors' , 1 );
+ini_set( 'display_startup_errors' , 1 );
+error_reporting( E_ALL );
 
 if ( count( $argv ) < 2 || in_array( '--help' , $argv ) || in_array( '-h' , $argv ) )
 {
@@ -34,12 +72,12 @@ if ( count( $argv ) < 2 || in_array( '--help' , $argv ) || in_array( '-h' , $arg
 }
 
 $filename = __DIR__ . "/../.entities.ent";  // sibling of .manual.xml
-touch( $filename );                         // empty file, at minimum, and
-$filename = realpath( $filename );          // realpath() fails if file not exists.
+touch( $filename );                         // empty file at minimum, and because
+$filename = realpath( $filename );          // realpath() fails if file does not exist.
 
-$entities = []; // all entitites, already overriden
-$expected = []; // entities that are expected to be oversidem (translatins)
-$override = []; // overrides stattics
+$entities = []; // all entities, already replaced
+$expected = []; // entities that are expected to be replaced/translated
+$foundcnt = []; // tracks how many times entity name was found
 
 $langs = [];
 $detail = false;
@@ -50,37 +88,30 @@ for( $idx = 1 ; $idx < count( $argv ) ; $idx++ )
     else
         $langs[] = $argv[$idx];
 
-if ( $detail )
-    print "Creating file $filename in verbose detail mode...\n";
-else
+if ( ! $detail )
     print "Creating file $filename...";
 
-for ( $run = 0 ; $run < count( $langs) ; $run++ )
-    parseDir( $langs[$run] , $run > 0 );
+for ( $run = 0 ; $run < count( $langs ) ; $run++ )
+    parseDir( $langs[$run] , ( count( $langs ) && $run == 0 ) );
 
 dump( $filename , $entities );
+[$all, $unt, $over] = verifyReplaced( $detail );
 
-if ( $detail )
-{
-    print "Done.\n";
-}
-else
+if ( ! $detail )
 {
     echo " done";
-    [$all, $unt, $over] = verifyOverrides( $detail );
     if ( $unt + $over > 0 )
-        echo ": $all entities, $unt untranslated, $over orerriden";
-    echo ".\n";
+        echo ": $all entities, $unt untranslated, $over overwrites.";
+    echo "\n";
 }
 exit;
 
-
-
-function parseDir( string $dir , bool $expectedOverride )
+function parseDir( string $dir , bool $expectedReplaced )
 {
     if ( ! is_dir( $dir ) )
-        return; // for now. When implanted in all languages: exit( "Not a directory: $dir\n" );
+        exit( "Not a directory: $dir\n" );
 
+    $count = 0;
     $files = scandir( $dir );
 
     foreach( $files as $file )
@@ -94,18 +125,23 @@ function parseDir( string $dir , bool $expectedOverride )
             continue;
 
         $text = file_get_contents( $path );
-        validateStore( $path , $text , $expectedOverride );
+        validateStore( $path , $text , $expectedReplaced );
+        $count++;
     }
+
+    global $detail;
+    if ( $detail )
+        echo "$count files on $dir\n";
 }
 
-function validateStore( string $path , string $text , bool $expectedOverride )
+function validateStore( string $path , string $text , bool $expectedReplaced )
 {
     $trim = trim( $text );
     if ( strlen( $trim ) == 0 )
     {
-        // Yes, there is empty entities, and they are valid entity, but not valid XML.
+        // Yes, there are empty entities, and they are valid entities, but not valid XML.
         // see: en/language-snippets.ent mongodb.note.queryable-encryption-preview
-        push( $path , $text , $expectedOverride , true );
+        push( $path , $text , $expectedReplaced , true );
         return;
     }
 
@@ -133,8 +169,7 @@ function validateStore( string $path , string $text , bool $expectedOverride )
         return;
     }
 
-    $inline = shouldInline( $dom );
-    push( $path , $text , $expectedOverride , $inline );
+    push( $path , $text , $expectedReplaced );
 }
 
 class EntityData
@@ -142,28 +177,28 @@ class EntityData
     public function __construct(
         public string $path ,
         public string $name ,
-        public string $text ,
-        public bool $inline ) {}
+        public string $text ) {}
 }
 
-function push( string $path , string $text , bool $expectedOverride , bool $inline )
+function push( string $path , string $text , bool $expectedReplaced )
 {
+
     global $entities;
     global $expected;
-    global $override;
+    global $foundcnt;
 
     $info = pathinfo( $path );
     $name = $info["filename"];
 
-    if ( $expectedOverride )
+    if ( $expectedReplaced )
         $expected[] = $name;
 
-    if ( ! isset( $override[$name] ) )
-        $override[$name] = 0;
+    if ( ! isset( $foundcnt[$name] ) )
+        $foundcnt[$name] = 1;
     else
-        $override[$name]++;
+        $foundcnt[$name]++;
 
-    $entity = new EntityData( $path , $name , $text , $inline );
+    $entity = new EntityData( $path , $name , $text );
     $entities[$name] = $entity;
 }
 
@@ -171,72 +206,64 @@ function dump( string $filename , array $entities )
 {
     // In PHP 8.4 may be possible to construct an extended
     // DOMEntity class with writable properties. For now,
-    // creating entities files directly as text.
+    // creating entities files directly by hand.
 
     $file = fopen( $filename , "w" );
     fputs( $file , "\n<!-- DO NOT COPY - Autogenerated by entities.php -->\n\n" );
 
     foreach( $entities as $name => $entity )
     {
-        if ( $entity->inline )
-        {
-            $text = str_replace( "'" , '&apos;' , $entity->text );
-            fputs( $file , "<!ENTITY $name '$text'>\n\n");
-        }
+        $text = $entity->text;
+
+        $quote = "";
+        $posSingle = strpos( $text , "'" );
+        $posDouble = strpos( $text , '"' );
+
+        if ( $posSingle === false )
+            $quote = "'";
+        if ( $posDouble === false )
+            $quote = '"';
+
+        // If the text contains mixed quoting, keeping it
+        // as an external file to avoid (re)quotation hell.
+
+        if ( $quote == "" )
+            fputs( $file , "<!ENTITY $name SYSTEM '{$entity->path}'>\n\n" );
         else
-        {
-            fputs( $file , "<!ENTITY $name SYSTEM '{$entity->path}'>\n\n");
-        }
+            fputs( $file , "<!ENTITY $name {$quote}{$text}{$quote}>\n\n" );
     }
+
     fclose( $file );
 }
 
-function shouldInline( DOMDocument $dom ) : bool
-{
-    // Pure text entities CANNOT be SYSTEMed (or libxml fails).
-    // But entities that CONTAINS elements need to be SYSTEMed
-    // to avoid quotation madness.
-
-    // Why libxml/w3c? WHY?
-
-    $xpath = new DomXPath( $dom );
-    $elems = $xpath->query( "child::*" );
-    return ( $elems->length == 0 );
-}
-
-function verifyOverrides( bool $outputDetail )
+function verifyReplaced( bool $outputDetail )
 {
     global $entities;
     global $expected;
-    global $override;
+    global $foundcnt;
 
-    $countGenerated = count( $entities );
-    $countExpectedOverriden = 0;
-    $countUnexpectedOverriden = 0;
+    $countUntranslated = 0;
+    $countConstantChanged = 0;
 
     foreach( $entities as $name => $text )
     {
-        $times = $override[$name];
+        $replaced = $foundcnt[$name] - 1 ;
+        $expectedReplaced = in_array( $name , $expected );
 
-        if ( isset( $expected[$name] ) )
+        if ( $expectedReplaced && $replaced != 1 )
         {
-            if ( $times != 1 )
-            {
-                $countExpectedOverriden++;
-                if ( $outputDetail )
-                    print "Expected   override entity $name overriden $times times.\n";
-            }
+            $countUntranslated++;
+            if ( $outputDetail )
+                print "Expected translated, replaced $replaced times:\t$name\n";
         }
-        else
+
+        elseif ( ! $expectedReplaced && $replaced != 0 )
         {
-            if ( $times != 0 )
-            {
-                $countUnexpectedOverriden++;
-                if ( $outputDetail )
-                    print "Unexpected override entity $name overriden $times times.\n";
-            }
+            $countConstantChanged++;
+            if ( $outputDetail )
+                print "Unexpected replaced, replaced $replaced times:\t$name\n";
         }
     }
 
-    return [$countGenerated, $countExpectedOverriden, $countUnexpectedOverriden];
+    return [count( $entities ), $countUntranslated, $countConstantChanged];
 }

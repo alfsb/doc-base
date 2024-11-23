@@ -1,5 +1,4 @@
-<?php
-/*
+<?php /*
 +----------------------------------------------------------------------+
 | Copyright (c) 1997-2023 The PHP Group                                |
 +----------------------------------------------------------------------+
@@ -16,25 +15,31 @@
 | Description: Split an .ent file into individual files.               |
 +----------------------------------------------------------------------+
 
-# With or withour tracking
+See `entities.php` source for detailed rationale.
 
-For spliting files from doc-base and doc-en, no revtag or hash tracking
-is necessary. But for translations, further processing is necessary to
-fill revtags with... some data.
+Use this for spliting `language-snippets-ent` or other "big" entities
+files into individual .xml files.
 
-This is a translation leve decision. To have hash and maintainer blank
-filled, to be manually filled with text revision, or to using the
-deduce algorithm to fill hash and maintainers.
+Leave hash/user empty to generate files without revtag (doc-en). For
+translators, open issues instructing running this script with filled
+the generated hash and local user (or '_').
+
+After spliting, add the new directory entities/ with they contents,
+and remove `language-snippets-ent`, in one go.
 
 */
 
+ini_set( 'display_errors' , 1 );
+ini_set( 'display_startup_errors' , 1 );
+error_reporting( E_ALL );
+
 if ( count( $argv ) < 4 )
-     die(" Syntax: php $argv[0] infile outdir ext [maintainer]\n" );
+     die(" Syntax: php $argv[0] infile outdir [hash user]\n" );
 
 $infile = $argv[1];
 $outdir = $argv[2];
-$ext    = $argv[3];
-$maintainer = $argv[4] ?? "";
+$hash   = $argv[3] ?? "";
+$user   = $argv[4] ?? "";
 
 $content = file_get_contents( $infile );
 $entities = [];
@@ -71,7 +76,7 @@ while ( true )
 
 foreach( $entities as $name => $text )
 {
-    $file = "$outdir/$name.$ext";
+    $file = "$outdir/$name.xml";
     if ( file_exists( $file ) )
         exit( "Name colision: $file\n" );
 }
@@ -80,7 +85,7 @@ foreach( $entities as $name => $text )
 
 foreach( $entities as $name => $text )
 {
-    $file = "$outdir/$name.$ext";
+    $file = "$outdir/$name.xml";
     file_put_contents( $file , $text );
 }
 
