@@ -110,11 +110,11 @@ if ( $normal )
 else
     print "Creating .entities.ent in debug mode.\n";
 
-loadEnt( __DIR__ . "/../global.ent"  , global: true );
+loadEnt( __DIR__ . "/../global.ent"  , global: true , warnMissing: true );
 foreach( $langs as $lang )
 {
     loadEnt( __DIR__ . "/../../$lang/global.ent" , global: true );
-    loadEnt( __DIR__ . "/../../$lang/manual.ent" , translate: true );
+    loadEnt( __DIR__ . "/../../$lang/manual.ent" , translate: true , warnMissing: true );
     loadEnt( __DIR__ . "/../../$lang/remove.ent" , remove: true );
     loadDir( $langs , $lang );
 }
@@ -180,7 +180,7 @@ class Entities
     static function slow( string $path )
     {
         if ( isset( $slow[$path] ) )
-            fwrite( STDERR , "External entity file physically overwrote: $path\n" );
+            fwrite( STDERR , "Unexpected physical file ovewrite: $path\n" );
         $slow[ $path ] = $path;
     }
 
@@ -226,7 +226,7 @@ class Entities
                     print "Expected translated, replaced $replaced times:\t$name\n";
             }
 
-            elseif ( $expectedRemoved && $replaced != 0 )
+            if ( $expectedRemoved && $replaced != 0 )
             {
                 Entities::$countRemoveReplaced++;
                 if ( $debug )
@@ -236,14 +236,15 @@ class Entities
     }
 }
 
-function loadEnt( string $path , bool $global = false , bool $translate = false , bool $remove = false )
+function loadEnt( string $path , bool $global = false , bool $translate = false , bool $remove = false , bool $warnMissing = false )
 {
     $absolute = realpath( $path );
     if ( $absolute === false )
         if ( PARTIAL_IMPL )
             return;
         else
-            exit( "Not directory: $path\n" );
+            if ( $warnMissing )
+                fwrite( STDERR , "\n  Missing entity file: $path\n" );
     $path = $absolute;
 
     $text = file_get_contents( $path );
@@ -268,9 +269,9 @@ function loadEnt( string $path , bool $global = false , bool $translate = false 
         $text = $other->saveXML();
 
         $text = str_replace( "&amp;" , "&" , $text );
+        $text = rtrim( $text , "\n" );
         $lines = explode( "\n" , $text );
-        array_shift( $lines );  // remove XML declaration
-        array_pop( $lines );    // remove spurious EOL
+        array_shift( $lines ); // remove XML declaration
         $text = implode( "\n" , $lines );
 
         Entities::put( $path , $name , $text , $global , $translate , $remove );
@@ -316,15 +317,15 @@ function loadXml( string $path , string $text , bool $expectedReplaced )
 {
     if ( trim( $text ) == "" )
     {
-        fwrite( STDERR , "\n  Empty entity '$path'. Should it be in remove.ent?\n" );
-        Entities::put( $pat , $text , replace: $expectedReplaced );
+        fwrite( STDERR , "\n  Empty entity (should it be in remove.ent?): '$path' \n" );
+        Entities::put( $pat , $text , remove: true );
         return;
     }
 
     $info = pathinfo( $path );
     $name = $info["filename"];
 
-    $frag = "<root>$text</root>";
+    $frag = "<frag>$text</frag>";
 
     $dom = new DOMDocument( '1.0' , 'utf8' );
     $dom->recover = true;
@@ -361,18 +362,15 @@ function saveEntitiesFile( string $filename , array $entities )
     foreach( $entities as $name => $entity )
     {
         $text = $entity->text;
-
         $quote = "";
-        $posSingle = strpos( $text , "'" );
-        $posDouble = strpos( $text , '"' );
-
-        if ( $posSingle === false )
-            $quote = "'";
-        if ( $posDouble === false )
-            $quote = '"';
 
         // If the text contains mixed quoting, keeping it
         // as an external file to avoid (re)quotation hell.
+
+        if ( strpos( $text , "'" ) === false )
+            $quote = "'";
+        if ( strpos( $text , '"' ) === false )
+            $quote = '"';
 
         if ( $quote == "" )
         {
