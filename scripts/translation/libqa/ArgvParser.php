@@ -58,6 +58,9 @@ class ArgvParser
                 $this->argv[ $pos ] = null;
                 $this->used[ $pos ] = true;
 
+                if ( $foundByPrefix )
+                    return substr( $arg , strlen( $prefix ) );
+
                 return $arg;
             }
         }
