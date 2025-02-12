@@ -24,7 +24,19 @@ alerts on a case by case basis. After all interesting cases are fixed,
 it's possible to rerun the command and `grep` the output for `--add-ignore`
 lines, run these commands, and by so, mass ignore the residual alerts.
 
-## qaxml-attributes.php (structural)
+## broken.php
+
+`doc-base/scripts/broken.php` will test if individual XML files are
+ill-formed. That is, if a file contains Unicode BOM, carriage returns (CR),
+or if XML contents are not
+[well-balanced](https://www.w3.org/TR/xml-fragment/#defn-well-balanced).
+
+Unbalanced XML contents are invalid XML and will result in a broken build.
+BOM and CR marks may not result in broken builds, but *will* cause several
+tools below to misbehave, as `libxml` behaviour changes if XML text contains
+these bytes.
+
+## qaxml-attributes.php
 
 `doc-base/scripts/translation/qaxml-attributes.php` checks if all translated
 files have the same tag-attribute-value triplets. Tag's attributes are
@@ -35,7 +47,7 @@ This script accepts an `--urgent` option, to filter alerts related to `xml:id`
 attributes. This will help translators on languages that are failing to build,
 to focus on mismatches that are probably most related with build fails.
 
-## qaxml-entities.php (structural)
+## qaxml-entities.php
 
 `doc-base/scripts/translation/qaxml-entities.php` checks if all translated
 files contain the same XML Entities References as the original files.
