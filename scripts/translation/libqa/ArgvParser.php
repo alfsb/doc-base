@@ -26,7 +26,6 @@ class ArgvParser
     public function __construct( array $argv )
     {
         $this->argv = array_values( array_filter( $argv ) );
-        $this->used = [];
         $this->used = array_fill( 0 , count( $argv ) , false );
     }
 

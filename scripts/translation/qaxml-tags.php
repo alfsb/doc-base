@@ -30,7 +30,7 @@ if ( count( $tags ) == 1 && $tags[0] == "" )
     $tags = [];
 
 if ( $detail )
-    $ignore->addIgnoreCommand = false;
+    $ignore->appendIgnoreCommands = false;
 
 $list   = SyncFileList::load();
 

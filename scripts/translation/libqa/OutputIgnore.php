@@ -23,7 +23,7 @@ class OutputIgnore
     private string $filename = ".qaxml.ignores";
     private string $argv0 = "";
 
-    public bool $addIgnoreCommand = true;
+    public bool $appendIgnoreCommands = true;
     public ArgvParser $argv;
 
     public function __construct( ArgvParser $argv )
@@ -63,7 +63,7 @@ class OutputIgnore
         }
 
         if ( $argv->consume( "--disable-ignore" ) != null )
-            $this->addIgnoreCommand = false;
+            $this->appendIgnoreCommands = false;
     }
 
     private function loadIgnores()
@@ -93,12 +93,12 @@ class OutputIgnore
         if ( in_array( $active , $marks ) )
             $ret = true;
         else
-            if ( $this->addIgnoreCommand )
+            if ( $this->appendIgnoreCommands )
                 $output->addFooter( "  php {$this->argv0} --add-ignore=$active\n" );
 
         // --del-ignore command
 
-        if ( $this->addIgnoreCommand )
+        if ( $this->appendIgnoreCommands )
             foreach ( $marks as $mark )
                 if ( str_starts_with( $mark , $prefix ) )
                     if ( $mark != $active )
