@@ -927,7 +927,12 @@ MSG;
         $list[ $id ] = $id;
     }
     if ( $see )
-        echo "  See: https://github.com/php/doc-base/blob/master/docs/structure.md#xmlid-structure\n";
+    {
+        echo "\n  See: https://github.com/php/doc-base/blob/master/docs/structure.md#xmlid-structure";
+        echo "\n  And: https://github.com/php/doc-base/tree/master/scripts/translation";
+        echo "\n  In special, qaxml-attributes.php and qaxml-entities.php, with and without --urgent.";
+        echo "\n\n";
+    }
 
     // Duplicated strucutral xml:ids are fatal on doc-en
 
