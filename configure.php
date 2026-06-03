@@ -612,6 +612,7 @@ function dtd_conf_entities()
     else
         $conf[] = "<!ENTITY manual.chmonly ''>";
 
+    file_put_contents( __DIR__ . "/temp/lang" , $lang );
     file_put_contents( __DIR__ . "/temp/manual.conf" , implode( "\n" , $conf ) );
 }
 
@@ -797,13 +798,13 @@ function xinclude_run_xpointer( DOMDocument $dom ) : int
 
 function xinclude_residual_fixup( DOMDocument $dom )
 {
-    // XInclude failures are soft errors on translations, so we replace
+    // XInclude failures are soft errors on translations, so we erase
     // residual XInclude tags on translations to keep them validating.
 
     $fixups = 0;
     $hardfail = false;
 
-    dom_saveload( $dom , __DIR__ . "/temp/manual.err" );
+    dom_saveload( $dom , __DIR__ . "/temp/manual.xi" );
     $nodes = xinclude_residual_list( $dom );
 
     foreach( $nodes as $node )
@@ -856,7 +857,9 @@ function xinclude_residual_fixup( DOMDocument $dom )
     unset( $nodes );
 
     if ( $fixups > 0 )
-        echo "Dumped file: temp/manual.err. Inspect residual xi:include tags in this file.\n\n";
+    {
+        echo "Dumped file temp/manual.xi. Inspect for residual xi:include tags in this file.\n\n";
+    }
 
     if ( $hardfail )
     {
