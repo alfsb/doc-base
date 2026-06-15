@@ -48,8 +48,6 @@ echo "configure.php on PHP " . phpversion() . ", libxml " . LIBXML_DOTTED_VERSIO
 // phd_version()                done
 // php_history()                done
 
-// ugly: make_scripts_executable
-
 const RNG_SCHEMA_DIR = __DIR__ . DIRECTORY_SEPARATOR . 'docbook' . DIRECTORY_SEPARATOR . 'docbook-5.2.1' . DIRECTORY_SEPARATOR . 'rng' . DIRECTORY_SEPARATOR;
 const RNG_SCHEMA_FILE = RNG_SCHEMA_DIR . 'docbook.rng';
 const RNG_SCHEMA_XINCLUDE_FILE = RNG_SCHEMA_DIR . 'docbookxi.rng';
@@ -190,25 +188,6 @@ function find_file($file_array) // {{{
     }
 
     return '';
-} // }}}
-
-// Recursive glob() with a callback function {{{
-function globbetyglob($globber, $userfunc)
-{
-    foreach (glob("$globber/*") as $file) {
-        if (is_dir($file)) {
-            globbetyglob($file, $userfunc);
-        } else {
-            call_user_func($userfunc, $file);
-        }
-    }
-} // }}}
-
-function make_scripts_executable($filename) // {{{
-{
-    if (substr($filename, -3) == '.sh') {
-        chmod($filename, 0755);
-    }
 } // }}}
 
 function print_xml_errors()
@@ -532,8 +511,6 @@ if ($ac["GENERATE"] != "no") {
     $ac["ONLYDIR"] = dirname(realpath($ac["GENERATE"]));
 }
 
-globbetyglob("{$ac['basedir']}/scripts", 'make_scripts_executable');
-
 git_clean();    // Idempotent clean up
 git_status();   // Show local repository status
 
@@ -728,17 +705,25 @@ function xinclude_run_byid( DOMDocument $dom )
     // so we need to *simulate* its *recursive* nature here.
 
     $total = 0;
+    $xpath = new DOMXPath( $dom );
+    $xpath->registerNamespace( "xi" , "http://www.w3.org/2001/XInclude" );
+
+    // Resolve xpointers via a precomputed map; on duplicate xml:ids, first wins.
+    // Avoids quadratic tree walks (~ 90% performance gain).
+    $byId = [];
+    foreach( $xpath->query( "//*[@xml:id]" ) as $node ) {
+        $byId[$node->getAttribute("xml:id")] ??= $node;
+    }
+
     for( $run = 0 ; $run < 10 ; $run++ )
     {
-        $xpath = new DOMXPath( $dom );
-        $xpath->registerNamespace( "xi" , "http://www.w3.org/2001/XInclude" );
         $xincludes = $xpath->query( "//xi:include" );
 
         $changed = false;
         foreach( $xincludes as $xinclude )
         {
             $xpointer = $xinclude->getAttribute( "xpointer" );
-            $target = $xinclude->ownerDocument->getElementById( $xpointer );
+            $target = $byId[ $xpointer ] ?? null;
 
             if ( $target == null )
                 continue;
