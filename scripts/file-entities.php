@@ -21,7 +21,7 @@ This script creates various "file entities", that is, DTD entities that
 point to files and file listings, named and composed of:
 
 - dir.dir.file         : pulls in a dir/dir/file.xml
-- dir.dif.entities.dir : pulls in XML files from dir/dir/dir/*.xml
+- dir.dir.entities.dir : pulls in XML files from dir/dir/dir/*.xml
 
 In the original file-entities.php.in, the files are created at:
 
@@ -33,14 +33,15 @@ In new idempotent mode, files are created at:
 - doc-base/temp/file-entites.ent
 - doc-base/temp/file-entites/dir.dir.ent
 
-The file entity for directories (file listings) are keep as individual
-files instead to avoid these libxml errors, in some OS/versions:
+The file entity for directory listings is kept as an individual
+files, instead of a monolithic one, to avoid these libxml errors,
+in some OS/versions:
 
 - Detected an entity reference loop [1]
 - Maximum entity amplification factor exceeded [2]
 
 See LIBXML_LIMITS_HACK below. This workaround creates about a thousand
-files per running, that slowsdows even more the manual building on HDD
+files per running, that slowsdows the manual building even more on HDD
 systems.
 
 [1] https://github.com/php/doc-base/pull/183

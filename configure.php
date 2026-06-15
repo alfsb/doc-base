@@ -858,6 +858,7 @@ function xinclude_residual_fixup( DOMDocument $dom )
 
     if ( $fixups > 0 )
     {
+        // TODO: erase all XML comments to ease debugging residual xi:xinclude here
         echo "Dumped file temp/manual.xi. Inspect for residual xi:include tags in this file.\n\n";
     }
 
