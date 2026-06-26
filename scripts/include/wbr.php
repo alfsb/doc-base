@@ -1,0 +1,244 @@
+<?php /*
++----------------------------------------------------------------------+
+| Copyright (c) 1997-2026 The PHP Group                                |
++----------------------------------------------------------------------+
+| This source file is subject to version 3.01 of the PHP license,      |
+| that is bundled with this package in the file LICENSE, and is        |
+| available through the world-wide-web at the following url:           |
+| https://www.php.net/license/3_01.txt.                                |
+| If you did not receive a copy of the PHP license and are unable to   |
+| obtain it through the world-wide-web, please send a note to          |
+| license@php.net, so we can mail you a copy immediately.              |
++----------------------------------------------------------------------+
+| Authors:     André L F S Bacci <ae php.net>                          |
++----------------------------------------------------------------------+
+| Description: XML fragments, a.k.a. "well balanced regions" classes.  |
++----------------------------------------------------------------------+
+
+                                                      What's Opera, Doc?
+                                                           -- Bugs Bunny
+
+                                                        Kill the wabbit!
+                                                           -- Elmer Fudd
+
+The .xml files of PHP Manual sources are not well-formed XML files. In
+fact, the files are at most *invalid* XML fragment files, or really,
+well-balanced regions with *undefined* DTD entities, that in turn makes
+then invalid in all levels.
+
+There is no know way to configure PHP's XML stack to accept any file or
+fragment with undefined DTD entities, at least before PHP 8.4, so the
+classes below exists to circuvent that.
+
+This parser replaces any undefined entities by <?ent processing
+instructions, so the file can be further processed but the XML
+stack without other changes.
+
+These XML fragment files, parsed and with entities replaced by PIs
+is called here "well-balanced text", or WBT for short.
+
+The XbtParser below is used for for general loading of individual WBT
+files and text, and also to a experimental replacement of XML assembly
+step of php/doc-base/configure.php, that uses libxml2, that in turn has
+hardcoded limits, already exceded by PHP Manual building.
+
+See: https://www.w3.org/TR/xml-fragment/#defn-fragment-body
+
+*/
+
+class WbtParser
+{
+    public function parseFile( string $filename , callable $replaceEntity )
+    {
+        $contents = $this->loadFile( $filename );
+        return $this->parseText( $contents , $replaceEntity );
+    }
+
+    public function parseText( DOMDocument $doc , callable $replaceEntity )
+    {
+        $nodes = $this->listTextNodes( $doc );
+        foreach( $nodes as $node )
+            $this->parseNode( $node , $replaceEntity );
+
+        $this->revertAmpersands( $doc );
+        return $doc->saveXML();
+    }
+
+    public function parseNode( DOMNode $node , callable $replaceEntity )
+    {
+        $type = $node->nodeType;
+        if ( $type != XML_TEXT_NODE )
+            throw new Exception( "Only text nodes: {$type}." );
+
+/*
+        // Skip numeric entities, as DOMDocument->createEntityReference
+        // cannot create those.
+if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
+        $skip = 0;
+        while ( true )
+        {
+
+            $posn = strpos( $text , "&#" , $skip );
+            if ( $posn !== false && $pos1 === $posn )
+            {
+                $skip += 2;
+                continue;
+            }
+            else
+                break;
+        }
+*/
+
+        $text = $node->nodeValue;
+        $pos1 = strpos( $text , "&" );
+        if ( $pos1 === false )
+            return;
+        $pos2 = strpos( $text , ";" , $pos1 + 1 );
+        if ( $pos2 === false )
+            return;
+
+        $repl = substr( $text , $pos1 , $pos2 - $pos1 );
+        $replaceEntity( $repl );
+
+        // If there is text around the entity about to be replaced,
+        // these need to be added as separated text nodes, around
+        // the current node, before replacing the entire original
+        // node by the new node.
+
+        $doc = $node->ownerDocument;
+        $name = substr( $text , $pos1 + 1 , $pos2 - $pos1 - 1 );
+
+        $prefix = substr( $text , 0 , $pos1 );
+        $suffix = substr( $text , $pos2 + 1 );
+        $center = $doc->createEntityReference( $name );
+
+        // DOMNode->replaceWith will cause double free()
+        // errors and core dumps as latter as PHP 8.1 on
+        // Ubuntu. Code should only create nodes, never
+        // delete or replace anything that may confuse the
+        // old versions.
+
+        if ( $prefix != "" )
+            $node->before( $prefix );
+
+        $node->before( $center );
+
+        if ( $prefix != "" )
+            $node->before( $suffix );
+
+        $node->parentNode->removeChild( $node );
+
+        if ( $center->nextSibling != null &&
+             $center->nextSibling->nodeType == XML_TEXT_NODE )
+            $this->parseNode( $center->nextSibling , $replaceEntity );
+    }
+
+    private function loadFile( string $filename ) : DOMDocument
+    {
+        if ( ! file_exists( $filename ) )
+            throw new Exception( "File not found." );
+        $contents = file_get_contents( $filename );
+        $ret = $this->loadText( $contents );
+        return $ret;
+    }
+
+    private function loadText( string $text ) : DOMDocument
+    {
+        $frag = false;
+        $text = $this->encodeAmpersand( $text );
+
+        $was = libxml_use_internal_errors( true );
+
+        $doc = new DOMDocument( '1.0' , 'utf8' );
+        $doc->preserveWhiteSpace = true;
+
+        $ret = $doc->loadXML( $text );
+        if ( ! $ret )
+        {
+            $frag = true;
+            $text = '<frag>' . $text . '</frag>';
+            $ret = $doc->loadXML( $text );
+        }
+
+        libxml_use_internal_errors( $was );
+        $messages = libxml_get_errors();
+        libxml_clear_errors();
+
+        if ( ! $ret )
+            throw new Exception( "Invalid well-balanced text." );
+
+        foreach( $messages as $message )
+            fwrite( STDERR , $messate );
+
+        return $doc;
+    }
+
+    private function encodeAmpersand( string $text ) : string
+    {
+        $text = str_replace( "&" , "&amp;" , $text );
+
+        // Replace numeric entities back (&#nnn;), as
+        // DOMDocument->createEntityReference cannot create
+        // these, but are accepted when it is reading XML.
+
+        while( true )
+        {
+            $pos = strpos( $text , '&amp;#' );
+            if ( $pos === false )
+                break;
+
+            $end = strpos( $text , ';' , $pos + 5 );
+            $len = $end - $pos + 1;
+            $sub = substr( $text , $pos , $len );
+            $rpl = str_replace( '&amp;' , '&' , $sub );
+            $text = str_replace( $sub , $rpl , $text );
+        }
+
+        return $text;
+    }
+
+    private function revertAmpersands( DOMDocument $doc )
+    {
+        // There is some places where WBT machinery does
+        // not (or does not can) replace textual &amp;ent;
+        // into real XML_ENTITY_REF_NODE nodes. These
+        // "other", pure text contexts are, probably:
+        //
+        // - 4 XML_CDATA_SECTION_NODE   (suspected)
+        // - 7 XML_PI_NODE              (suspected)
+        // - 8 XML_COMMENT_NODE         (confirmed)
+
+        $xpath = new DOMXPath( $doc );
+
+        $nodes = $xpath->query( "//comment()" );
+        foreach( $nodes as $node )
+            if ( strpos( $node->textContent , '&amp;' ) !== false )
+                $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
+        }
+
+    private function listTextNodes( DOMDocument $doc )
+    {
+        $ret = [];
+        $xpath = new DOMXPath( $doc );
+
+        // We ask for #text,
+        // but we also receive
+        // #cdata-section
+
+        $texts = $xpath->query( "//text()" );
+        foreach( $texts as $node )
+            if ( $node->nodeType == XML_TEXT_NODE )
+                $ret[] = $node;
+
+        // Also, //text() does not find text nodes inside
+        // attributes values. Sigh.
+
+        $attrs = $xpath->query( "//@*" );
+        foreach( $attrs as $attr )
+            foreach( $attr->childNodes as $node )
+                if ( strpos( $node->nodeValue , '&' ) !== false )
+                    $ret[] = $node;
+
+        return $ret;
+    }
+}
