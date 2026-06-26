@@ -15,11 +15,11 @@
 | Description: XML fragments, a.k.a. "well balanced regions" classes.  |
 +----------------------------------------------------------------------+
 
-                                                      What's Opera, Doc?
-                                                           -- Bugs Bunny
-
-                                                        Kill the wabbit!
-                                                           -- Elmer Fudd
+//                                                    What's Opera, Doc?
+//                                                         -- Bugs Bunny
+//
+//                                                      Kill the wabbit!
+//                                                         -- Elmer Fudd
 
 The .xml files of PHP Manual sources are not well-formed XML files. In
 fact, the files are at most *invalid* XML fragment files, or really,
@@ -97,7 +97,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
         if ( $pos2 === false )
             return;
 
-        $repl = substr( $text , $pos1 , $pos2 - $pos1 );
+        $repl = substr( $text , $pos1 , $pos2 - $pos1 + 1 );
         $replaceEntity( $repl );
 
         // If there is text around the entity about to be replaced,
@@ -123,7 +123,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
 
         $node->before( $center );
 
-        if ( $prefix != "" )
+        if ( $suffix != "" )
             $node->before( $suffix );
 
         $node->parentNode->removeChild( $node );
@@ -177,7 +177,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
     {
         $text = str_replace( "&" , "&amp;" , $text );
 
-        // Replace numeric entities back (&#nnn;), as
+        // Revert numeric entities (&#nnn;), as
         // DOMDocument->createEntityReference cannot create
         // these, but are accepted when it is reading XML.
 
@@ -200,21 +200,32 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
     private function revertAmpersands( DOMDocument $doc )
     {
         // There is some places where WBT machinery does
-        // not (or does not can) replace textual &amp;ent;
-        // into real XML_ENTITY_REF_NODE nodes. These
-        // "other", pure text contexts are, probably:
+        // not (or does not can) replace textual '&amp;ent;'
+        // into real XML_ENTITY_REF_NODE '&ent;' nodes. These
+        // other nodes, that have pure text contents are:
         //
-        // - 4 XML_CDATA_SECTION_NODE   (suspected)
-        // - 7 XML_PI_NODE              (suspected)
-        // - 8 XML_COMMENT_NODE         (confirmed)
+        // - 4 XML_CDATA_SECTION_NODE
+        // - 7 XML_PI_NODE
+        // - 8 XML_COMMENT_NODE
 
         $xpath = new DOMXPath( $doc );
+
+        $nodes = $xpath->query( "//text()" );
+        foreach( $nodes as $node )
+            if ( $node->nodeType == XML_CDATA_SECTION_NODE )
+                if ( strpos( $node->textContent , '&amp;' ) !== false )
+                    $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
+
+        $nodes = $xpath->query( "//processing-instruction()" );
+        foreach( $nodes as $node )
+            if ( strpos( $node->textContent , '&amp;' ) !== false )
+                $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
 
         $nodes = $xpath->query( "//comment()" );
         foreach( $nodes as $node )
             if ( strpos( $node->textContent , '&amp;' ) !== false )
                 $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
-        }
+    }
 
     private function listTextNodes( DOMDocument $doc )
     {
