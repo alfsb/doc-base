@@ -24,23 +24,22 @@
 The .xml files of PHP Manual sources are not well-formed XML files. In
 fact, the files are at most *invalid* XML fragment files, or really,
 well-balanced regions with *undefined* DTD entities, that in turn makes
-then invalid in all levels.
+them invalid in all levels.
 
-There is no know way to configure PHP's XML stack to accept any file or
-fragment with undefined DTD entities, at least before PHP 8.4, so the
-classes below exists to circuvent that.
+There is no known way to configure PHP's XML stack to accept any file or
+fragment with undefined DTD entities, and keep them, at least before
+PHP 8.4, so the classes below exist to circumvent that.
 
-This parser replaces any undefined entities by <?ent processing
-instructions, so the file can be further processed but the XML
-stack without other changes.
+This parser recreates any undefined entities as is, in place, so the
+text can be further processed with the XML stack without other changes.
 
-These XML fragment files, parsed and with entities replaced by PIs
-is called here "well-balanced text", or WBT for short.
+These invalid XML files and fragments, parsed and with entities recreated,
+are called here as "well-balanced text", or WBT for short.
 
 The XbtParser below is used for for general loading of individual WBT
-files and text, and also to a experimental replacement of XML assembly
+files and texts, and also to a experimental replacement of XML assembly
 step of php/doc-base/configure.php, that uses libxml2, that in turn has
-hardcoded limits, already exceded by PHP Manual building.
+hardcoded limits, already exceeded by PHP Manual building.
 
 See: https://www.w3.org/TR/xml-fragment/#defn-fragment-body
 
@@ -48,59 +47,41 @@ See: https://www.w3.org/TR/xml-fragment/#defn-fragment-body
 
 class WbtParser
 {
-    public function parseFile( string $filename , callable $replaceEntity )
+    public function parseFile( string $filename , callable $entityCallback )
     {
         $contents = $this->loadFile( $filename );
-        return $this->parseText( $contents , $replaceEntity );
+        return $this->parseText( $contents , $entityCallback );
     }
 
-    public function parseText( DOMDocument $doc , callable $replaceEntity )
+    public function parseText( DOMDocument $doc , callable $entityCallback )
     {
         $nodes = $this->listTextNodes( $doc );
         foreach( $nodes as $node )
-            $this->parseNode( $node , $replaceEntity );
+            $this->parseNode( $node , $entityCallback );
 
         $this->revertAmpersands( $doc );
         return $doc->saveXML();
     }
 
-    public function parseNode( DOMNode $node , callable $replaceEntity )
+    public function parseNode( DOMNode $node , callable $entityCallback )
     {
         $type = $node->nodeType;
         if ( $type != XML_TEXT_NODE )
             throw new Exception( "Only text nodes: {$type}." );
 
-/*
-        // Skip numeric entities, as DOMDocument->createEntityReference
-        // cannot create those.
-if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
-        $skip = 0;
-        while ( true )
-        {
-
-            $posn = strpos( $text , "&#" , $skip );
-            if ( $posn !== false && $pos1 === $posn )
-            {
-                $skip += 2;
-                continue;
-            }
-            else
-                break;
-        }
-*/
-
         $text = $node->nodeValue;
         $pos1 = strpos( $text , "&" );
         if ( $pos1 === false )
             return;
+
         $pos2 = strpos( $text , ";" , $pos1 + 1 );
         if ( $pos2 === false )
             return;
 
         $repl = substr( $text , $pos1 , $pos2 - $pos1 + 1 );
-        $replaceEntity( $repl );
+        //$entityCallback( $repl );
 
-        // If there is text around the entity about to be replaced,
+        // If there is text around the entity about to be recreated,
         // these need to be added as separated text nodes, around
         // the current node, before replacing the entire original
         // node by the new node.
@@ -113,7 +94,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
         $center = $doc->createEntityReference( $name );
 
         // DOMNode->replaceWith will cause double free()
-        // errors and core dumps as latter as PHP 8.1 on
+        // errors and core dumps as late as PHP 8.1 on
         // Ubuntu. Code should only create nodes, never
         // delete or replace anything that may confuse the
         // old versions.
@@ -130,7 +111,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
 
         if ( $center->nextSibling != null &&
              $center->nextSibling->nodeType == XML_TEXT_NODE )
-            $this->parseNode( $center->nextSibling , $replaceEntity );
+            $this->parseNode( $center->nextSibling , $entityCallback );
     }
 
     private function loadFile( string $filename ) : DOMDocument
@@ -142,7 +123,7 @@ if ( strpos( $text , "&#" ) !== false ) throw new Exception( $text );
         return $ret;
     }
 
-    private function loadText( string $text ) : DOMDocument
+    private function loadText( string $text ) : DOMDocument // TODO DOMDocument|DOMFragment
     {
         $frag = false;
         $text = $this->encodeAmpersand( $text );
