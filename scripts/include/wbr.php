@@ -22,13 +22,12 @@
 //                                                         -- Elmer Fudd
 
 The .xml files of PHP Manual sources are not well-formed XML files. In
-fact, the files are at most *invalid* XML fragment files, or really,
-well-balanced regions with *undefined* DTD entities, that in turn makes
-them invalid in all levels.
+fact, the files are at most well-balanced regions with *undefined* DTD
+entities, that makes them always invalid.
 
 There is no known way to configure PHP's XML stack to accept any file or
-fragment with undefined DTD entities, and keep them, at least before
-PHP 8.4, so the classes below exist to circumvent that.
+fragment with undefined DTD entities, and keep them as is, at least
+before PHP 8.4, so the class below exists to workaround this limitation.
 
 This parser recreates any undefined entities as is, in place, so the
 text can be further processed with the XML stack without other changes.
@@ -36,7 +35,7 @@ text can be further processed with the XML stack without other changes.
 These invalid XML files and fragments, parsed and with entities recreated,
 are called here as "well-balanced text", or WBT for short.
 
-The XbtParser below is used for for general loading of individual WBT
+The WbtParser below is used for for general loading of individual WBT
 files and texts, and also to a experimental replacement of XML assembly
 step of php/doc-base/configure.php, that uses libxml2, that in turn has
 hardcoded limits, already exceeded by PHP Manual building.
@@ -47,23 +46,29 @@ See: https://www.w3.org/TR/xml-fragment/#defn-fragment-body
 
 class WbtParser
 {
-    public function parseFile( string $filename , callable $entityCallback )
+    public function parseFile( string $filename ) : DOMDocument|DOMFragment
     {
-        $contents = $this->loadFile( $filename );
-        return $this->parseText( $contents , $entityCallback );
+        $root = $this->loadFile( $filename );
+        $this->patchNodes( $root );
+        return $root;
     }
 
-    public function parseText( DOMDocument $doc , callable $entityCallback )
+    public function parseText( string $contents ) : DOMDocument|DOMFragment
     {
-        $nodes = $this->listTextNodes( $doc );
-        foreach( $nodes as $node )
-            $this->parseNode( $node , $entityCallback );
-
-        $this->revertAmpersands( $doc );
-        return $doc->saveXML();
+        $root = $this->loadText( $contents );
+        $this->patchNodes( $root );
+        return $root;
     }
 
-    public function parseNode( DOMNode $node , callable $entityCallback )
+    private function patchNodes( DOMNode $root )
+    {
+        $texts = $this->listTextNodes( $root );
+        foreach( $texts as $node )
+            $this->patchNode( $node );
+        $this->revertLiteralAmpersands( $root );
+    }
+
+    private function patchNode( DOMNode $node )
     {
         $type = $node->nodeType;
         if ( $type != XML_TEXT_NODE )
@@ -79,7 +84,6 @@ class WbtParser
             return;
 
         $repl = substr( $text , $pos1 , $pos2 - $pos1 + 1 );
-        //$entityCallback( $repl );
 
         // If there is text around the entity about to be recreated,
         // these need to be added as separated text nodes, around
@@ -111,10 +115,10 @@ class WbtParser
 
         if ( $center->nextSibling != null &&
              $center->nextSibling->nodeType == XML_TEXT_NODE )
-            $this->parseNode( $center->nextSibling , $entityCallback );
+            $this->patchNode( $center->nextSibling );
     }
 
-    private function loadFile( string $filename ) : DOMDocument
+    private function loadFile( string $filename ) : DOMDocument|DOMFragment
     {
         if ( ! file_exists( $filename ) )
             throw new Exception( "File not found." );
@@ -123,7 +127,7 @@ class WbtParser
         return $ret;
     }
 
-    private function loadText( string $text ) : DOMDocument // TODO DOMDocument|DOMFragment
+    private function loadText( string $text ) : DOMDocument|DOMFragment
     {
         $frag = false;
         $text = $this->encodeAmpersand( $text );
@@ -133,7 +137,9 @@ class WbtParser
         $doc = new DOMDocument( '1.0' , 'utf8' );
         $doc->preserveWhiteSpace = true;
 
-        $ret = $doc->loadXML( $text );
+        $opt = LIBXML_DTDATTR | LIBXML_DTDLOAD;
+
+        $ret = $doc->loadXML( $text , $opt );
         if ( ! $ret )
         {
             $frag = true;
@@ -150,6 +156,8 @@ class WbtParser
 
         foreach( $messages as $message )
             fwrite( STDERR , $messate );
+
+        //TODO inline revertLiteralAmpersands here
 
         return $doc;
     }
@@ -178,7 +186,7 @@ class WbtParser
         return $text;
     }
 
-    private function revertAmpersands( DOMDocument $doc )
+    private function revertLiteralAmpersands( DOMDocument $doc )
     {
         // There is some places where WBT machinery does
         // not (or does not can) replace textual '&amp;ent;'
@@ -194,17 +202,17 @@ class WbtParser
         $nodes = $xpath->query( "//text()" );
         foreach( $nodes as $node )
             if ( $node->nodeType == XML_CDATA_SECTION_NODE )
-                if ( strpos( $node->textContent , '&amp;' ) !== false )
+                if ( strpos( $node->textContent , '&amp;' ) !== false ) //TODO unnecessary after inline?
                     $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
 
         $nodes = $xpath->query( "//processing-instruction()" );
         foreach( $nodes as $node )
-            if ( strpos( $node->textContent , '&amp;' ) !== false )
+            if ( strpos( $node->textContent , '&amp;' ) !== false )     //TODO unnecessary after inline?
                 $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
 
         $nodes = $xpath->query( "//comment()" );
         foreach( $nodes as $node )
-            if ( strpos( $node->textContent , '&amp;' ) !== false )
+            if ( strpos( $node->textContent , '&amp;' ) !== false )     //TODO unnecessary after inline?
                 $node->textContent = str_replace( '&amp;' , '&' , $node->textContent );
     }
 
