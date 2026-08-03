@@ -208,7 +208,7 @@ function print_dom_errors()
     }
 }
 
-function print_xml_errors( bool $omitNoFile = false )
+function print_xml_errors()
 {
     global $ac;
     $report = $ac['LANG'] == 'en' || $ac['XPOINTER_REPORTING'] == 'yes';
@@ -228,7 +228,7 @@ function print_xml_errors( bool $omitNoFile = false )
         $line = $error->line;
         $clmn = $error->column;
 
-        if ( $file == '' && $omitNoFile )
+        if ( $file == '' )
             continue;
 
         if ( str_starts_with( $mssg , 'XPointer evaluation failed:' ) && ! $report )
@@ -756,7 +756,7 @@ function dom_load( DOMDocument $dom , string $filename , bool $firstLoad ) : boo
     $ret = $dom->load( $filename , $options );
     if ( $ret && $firstLoad )
     {
-        print_xml_errors( true );
+        print_xml_errors();
         xml_trim_first( $dom );
     }
     return $ret;
