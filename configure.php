@@ -208,11 +208,10 @@ function print_dom_errors()
     }
 }
 
-function print_xml_errors()
+function print_xml_errors( bool $omitNoFile = false )
 {
     global $ac;
     $report = $ac['LANG'] == 'en' || $ac['XPOINTER_REPORTING'] == 'yes';
-    $output = ( $ac['STDERR_TO_STDOUT'] == 'yes' ) ? STDOUT : STDERR ;
 
     $errors = libxml_get_errors();
     libxml_clear_errors();
@@ -220,9 +219,7 @@ function print_xml_errors()
     $filePrefix = "file:///";
     $tempPrefix = realpath( __DIR__ . "/temp" ) . "/";
     $rootPrefix = realpath( __DIR__ . "/.." ) . "/";
-
-    if ( count( $errors ) > 0 )
-        fprintf( $output , "\n" );
+    $firstBreak = false;
 
     foreach( $errors as $error )
     {
@@ -231,8 +228,17 @@ function print_xml_errors()
         $line = $error->line;
         $clmn = $error->column;
 
+        if ( $file == '' && $omitNoFile )
+            continue;
+
         if ( str_starts_with( $mssg , 'XPointer evaluation failed:' ) && ! $report )
             continue; // Translations can omit these, to focus on fatal errors
+
+        if ( ! $firstBreak )
+        {
+            print "\n";
+            $firstBreak = true;
+        }
 
         if ( str_starts_with( $file , $filePrefix ) )
             $file = substr( $file , strlen( $filePrefix ) );
@@ -243,7 +249,7 @@ function print_xml_errors()
 
         $prefix = $error->level === LIBXML_ERR_FATAL ? "FATAL" : "error";
 
-        fwrite( $output , "[$prefix $file {$line}:{$clmn}] {$mssg}\n" );
+        print "[$prefix $file {$line}:{$clmn}] {$mssg}\n";
     }
 }
 
@@ -717,11 +723,43 @@ if ($ac["GENERATE"] != "no") {
 }
 checkvalue($ac["GENERATE"]);
 
+echo "Creating monolithic temp/manual.xml... ";
+$dom = new DOMDocument();
+
+if ( dom_load( $dom , __DIR__ . '/../en/manual.xml' , true ) )
+{
+    dom_saveload( $dom ); // correct file/line/column on error messages
+    echo " done.\n";
+}
+else
+{
+    echo "failed.\n";
+    print_xml_errors();
+    xml_broken_files_check();
+    errors_are_bad(1);
+}
+
 function dom_load( DOMDocument $dom , string $filename , bool $firstLoad ) : bool
 {
     $filename = realpath( $filename );
-    $options = LIBXML_NOENT | LIBXML_COMPACT | LIBXML_BIGLINES | LIBXML_PARSEHUGE;
-    return $dom->load( $filename , $options );
+
+    // On the first load we cannot use LIBXML_NSCLEAN, because
+    // libxml drops all namespaces inside DTD entities.
+
+    $options = LIBXML_NOENT
+             | LIBXML_COMPACT
+             | LIBXML_BIGLINES
+             | LIBXML_PARSEHUGE;
+    if ( ! $firstLoad )
+        $options |= LIBXML_NSCLEAN;
+
+    $ret = $dom->load( $filename , $options );
+    if ( $ret && $firstLoad )
+    {
+        print_xml_errors( true );
+        xml_trim_first( $dom );
+    }
+    return $ret;
 }
 
 function dom_saveload( DOMDocument $dom , string $filename = "" ) : string
@@ -736,24 +774,36 @@ function dom_saveload( DOMDocument $dom , string $filename = "" ) : string
     return $filename;
 }
 
-echo "Creating monolithic temp/manual.xml... ";
-$dom = new DOMDocument();
-
-if ( dom_load( $dom , __DIR__ . '/../en/manual.xml' , true ) )
+function xml_trim_first( DOMDocument $doc )
 {
-    echo " done.\n";
-    print_dom_errors();
-    dom_saveload( $dom ); // correct file/line/column on error messages
-}
-else
-{
-    echo "failed.\n";
-    print_xml_errors();
-    individual_xml_broken_check();
-    errors_are_bad(1);
+    $xpath = new DOMXPath( $doc );
+    $dtdNode = null;
+    $dels = [];
+
+    // Save and remove DTD Document Type, as all entity
+    // references are already expanded at this point.
+
+    foreach( $doc->childNodes as $node )
+        if ( $node->nodeType == XML_DOCUMENT_TYPE_NODE )
+            $dtdNode = $node;
+    if ( $dtdNode != null )
+    {
+        $contents = $doc->saveXML( $dtdNode );
+        file_put_contents( __DIR__ . '/temp/doctype.dtd' , $contents );
+        $node->parentNode->removeChild( $dtdNode );
+    }
+
+    // Remove all XML comments, in reverse order, outside enumeration.
+
+    $comments = $xpath->query( "//comment()" );
+    for ( $idx = $comments->length - 1 ; $idx >= 0 ; $idx-- )
+    {
+        $node = $comments[ $idx ];
+        $node->parentNode->removeChild( $node );
+    }
 }
 
-function individual_xml_broken_check()
+function xml_broken_files_check()
 {
     $cmd = array();
     $cmd[] = $GLOBALS['ac']['PHP'];
@@ -779,7 +829,7 @@ $total += xinclude_run_xpointer( $dom );
 if ( $total == 0 )
     echo "failed.\n";
 else
-    echo "done: $total tags replaced.\n";
+    echo "done: $total tags.\n";
 
 xinclude_residual_fixup( $dom );
 
