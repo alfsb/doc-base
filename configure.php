@@ -84,6 +84,8 @@ Package-specific:
   --disable-libxml-check         Disable the libxml 2.7.4+ requirement check
   --with-php=PATH                Path to php CLI executable [detect]
   --with-lang=LANG               Language to build [{$acd['LANG']}]
+  --with-base-lang=LANG          Language directory that is the base
+                                 (authoritative) manual tree [{$acd['LANG_BASE_DIR']}]
   --with-partial=my-xml-id       Root ID to build (e.g. <book xml:id="MY-ID">) [{$acd['PARTIAL']}]
   --with-jing=auto|yes|no        Validate with Jing (requires Java) instead of
                                  libxml [{$acd['JING']}]
@@ -211,7 +213,7 @@ function print_dom_errors()
 function print_xml_errors()
 {
     global $ac;
-    $report = $ac['LANG'] == 'en' || $ac['XPOINTER_REPORTING'] == 'yes';
+    $report = is_single_language() || $ac['XPOINTER_REPORTING'] == 'yes';
     $output = ( $ac['STDERR_TO_STDOUT'] == 'yes' ) ? STDOUT : STDERR ;
 
     $errors = libxml_get_errors();
@@ -296,7 +298,9 @@ $acd = array( // {{{
     'CHMONLY_INCL_BEGIN' => '<!--',
     'CHMONLY_INCL_END' => '-->',
     'LANG' => 'en',
+    'LANGS' => ['en'],
     'LANGDIR' => "{$rootdir}/en",
+    'LANG_BASE_DIR' => 'en',
     'ENCODING' => 'utf-8',
     'PARTIAL' => 'no',
     'DETAILED_ERRORMSG' => 'no',
@@ -380,6 +384,10 @@ foreach ($_SERVER['argv'] as $k => $opt) { // {{{
 
         case 'lang':
             $ac['LANG'] = $v;
+            break;
+
+        case 'base-lang':
+            $ac['LANG_BASE_DIR'] = $v;
             break;
 
         case 'partial':
@@ -510,13 +518,24 @@ if ($ac['LANG'] == '' /* || $ac['LANG'] == 'no' */) {
 } else if ($ac['LANG'] == 'yes') {
     $ac['LANG'] = 'en';
 }
-if ($ac["LANG"] == "en") {
+// Language dirs in consideration, in overwriting order (last wins):
+// the base manual tree first, an optional translation overlay second.
+
+if (!in_array('LANG', $overridden_settings)) {
+    $ac['LANG'] = $ac['LANG_BASE_DIR'];
+}
+$ac['LANGS'] = [$ac['LANG_BASE_DIR']];
+if ($ac['LANG'] !== $ac['LANG_BASE_DIR']) {
+    $ac['LANGS'][] = $ac['LANG'];
+}
+
+if (is_single_language()) {
     $ac["TRANSLATION_ONLY_INCL_BEGIN"] = "<!--";
     $ac["TRANSLATION_ONLY_INCL_END"] = "-->";
 }
+
 checkvalue($ac['LANG']);
 file_put_contents( __DIR__ . "/temp/lang" , $ac['LANG'] );
-
 checking("whether the language is supported");
 $LANGDIR = "{$ac['rootdir']}/{$ac['LANG']}";
 if (!file_exists($LANGDIR) || !is_readable($LANGDIR)) {
@@ -524,8 +543,13 @@ if (!file_exists($LANGDIR) || !is_readable($LANGDIR)) {
 }
 
 $ac['LANGDIR'] = basename($LANGDIR);
-$ac['EN_DIR'] = 'en';
 checkvalue("yes");
+
+function is_single_language() : bool
+{
+    global $ac;
+    return count($ac['LANGS']) === 1;
+}
 
 checking("for partial build");
 checkvalue($ac['PARTIAL']);
@@ -560,9 +584,9 @@ function git_status()
         return;
 
     $repos = array();
-    $repos['doc-base']  = $ac['basedir'];
-    $repos['en']        = "{$ac['rootdir']}/{$ac['EN_DIR']}";
-    $repos[$ac['LANG']] = "{$ac['rootdir']}/{$ac['LANG']}";
+    $repos['doc-base']           = $ac['basedir'];
+    $repos[$ac['LANG_BASE_DIR']] = "{$ac['rootdir']}/{$ac['LANG_BASE_DIR']}";
+    $repos[$ac['LANG']]          = "{$ac['rootdir']}/{$ac['LANG']}";
 
     $output = "";
     foreach ( $repos as $name => $path )
@@ -609,11 +633,13 @@ function dtd_conf_entities()
     $baseEnt2 = dtd_pe_body( __DIR__ . '/temp/file-entities.ent' );
     $baseEnt3 = dtd_pe_body( __DIR__ . '/temp/entities.ent' );
 
-    $langOne1 = dtd_pe_body( __DIR__ . '/../en/language-defs.ent' );
-    $langOne2 = dtd_pe_body( __DIR__ . '/../en/language-snippets.ent' );
-    $langOne3 = dtd_pe_body( __DIR__ . '/../en/extensions.ent' );
+    $base = $ac['LANG_BASE_DIR'];
 
-    if ( $lang == 'en ' )
+    $langOne1 = dtd_pe_body( __DIR__ . "/../$base/language-defs.ent" );
+    $langOne2 = dtd_pe_body( __DIR__ . "/../$base/language-snippets.ent" );
+    $langOne3 = dtd_pe_body( __DIR__ . "/../$base/extensions.ent" );
+
+    if ( is_single_language() )
     {
         $langTwo1 = dtd_pe_body();
         $langTwo2 = dtd_pe_body();
@@ -632,7 +658,9 @@ function dtd_conf_entities()
         $chmpath = dtd_pe_body();
 
     $conf = [];
+
     $conf[] = "<!ENTITY LANG '$lang'>";
+
     $conf[] = "<!ENTITY manual.chmonly           $chmpath>";
 
     $conf[] = "<!ENTITY % base-entities          $baseEnt1>";
@@ -647,7 +675,7 @@ function dtd_conf_entities()
     $conf[] = "<!ENTITY % translation-snippets   $langTwo2>";
     $conf[] = "<!ENTITY % translation-extensions $langTwo3>";
 
-    $outdir = __DIR__ . '/../en/temp';
+    $outdir = __DIR__ . "/../$base/temp";
     realpain( $outdir , mkdir: true );
     file_put_contents( "{$outdir}/conf.dtd" , implode( "\n" , $conf ) );
 }
@@ -662,7 +690,8 @@ function dtd_file_entities()
     $parts = array();
     $parts[] = $withphp;
     $parts[] = __DIR__ . "/scripts/file-entities.php";
-    if ( $lang != "en" )
+    $parts[] = $ac['LANG_BASE_DIR'];
+    if ( $lang != $ac['LANG_BASE_DIR'] )
         $parts[] = $lang;
     if ( $withchm )
         $parts[] = '--chmonly';
@@ -688,8 +717,8 @@ function dtd_text_entities()
 
     $parts = [ $php
              , __DIR__ . "/scripts/text-entities.php"
-             , "en" ];
-    if ( $lang != "en" )
+             , $ac['LANG_BASE_DIR'] ];
+    if ( $lang != $ac['LANG_BASE_DIR'] )
         $parts[] = $lang;
 
     foreach ( $parts as & $part )
@@ -739,7 +768,7 @@ function dom_saveload( DOMDocument $dom , string $filename = "" ) : string
 echo "Creating monolithic temp/manual.xml... ";
 $dom = new DOMDocument();
 
-if ( dom_load( $dom , __DIR__ . '/../en/manual.xml' , true ) )
+if ( dom_load( $dom , __DIR__ . "/../{$ac['LANG_BASE_DIR']}/manual.xml" , true ) )
 {
     echo " done.\n";
     print_dom_errors();
@@ -795,10 +824,10 @@ function xinclude_no_fallback( DOMDocument $dom )
 
     if ( $xifallbacks->length > 0 )
     {
-        if ( $GLOBALS['ac']['LANG'] == 'en' )
+        if ( is_single_language() )
         {
             print "\n<xi:fallback> cause silent errors in all languages.\n";
-            print "Not allowed on doc-en.\n";
+            print "Not allowed on base manual trees.\n";
             errors_are_bad( 1 );
         }
         else
@@ -1012,9 +1041,9 @@ MSG;
         echo "\n\n";
     }
 
-    // Duplicated structural xml:ids are fatal on doc-en
+    // Duplicated structural xml:ids are fatal on base manual trees
 
-    $fatal = $GLOBALS['ac']['LANG'] == 'en';
+    $fatal = is_single_language();
 
     if ( $structural && $fatal )
         errors_are_bad( 1 );
@@ -1134,7 +1163,7 @@ function xml_validate_jing()
         if ( preg_match( '/IDREF "[^"]+" without matching ID/', $line ) )
             $countFatal--;
 
-    if ( $GLOBALS['ac']['LANG'] === 'en' || $countFatal > 0 )
+    if ( is_single_language() || $countFatal > 0 )
         errors_are_bad( 1 );
 }
 
@@ -1143,7 +1172,7 @@ function xml_validate_libxml( $dom )
     echo "Validating temp/manual.xml (libxml)... ";
     $ok = $dom->relaxNGValidate( RNG_SCHEMA_FILE );
 
-    if ( ! $ok && $GLOBALS['ac']['LANG'] != 'en' )
+    if ( ! $ok && ! is_single_language() )
     {
         $errors = libxml_get_errors();
         $warnings = 0;
@@ -1207,7 +1236,7 @@ function phd_conf_json()
         'rootdir'           => $ac['rootdir'],
         'srcdir'            => $ac['srcdir'],
         'lang'              => $ac['LANG'],
-        'enDir'             => $ac['EN_DIR'],
+        'enDir'             => $ac['LANG_BASE_DIR'],
         'langDir'           => $ac['LANGDIR'],
         'generate'          => $ac['GENERATE'],
         'xpointerReporting' => $ac['XPOINTER_REPORTING'] === 'yes',
@@ -1240,7 +1269,7 @@ function php_history()
 
     echo 'PhD history:';
 
-    $lang_mod_file = (($ac['LANG'] !== 'en') ? ("{$ac['rootdir']}/{$ac['EN_DIR']}") : ("{$ac['rootdir']}/{$ac['LANGDIR']}")) . "/fileModHistory.php";
+    $lang_mod_file = "{$ac['rootdir']}/{$ac['LANG_BASE_DIR']}/fileModHistory.php";
     $doc_base_mod_file = __DIR__ . "/fileModHistory.php";
 
     $history_file = null;
@@ -1275,12 +1304,12 @@ function phd_sources()
 
     echo ' reading,';
     $source_map = array();
-    $en_dir = "{$ac['rootdir']}/{$ac['EN_DIR']}";
+    $base_dir = "{$ac['rootdir']}/{$ac['LANG_BASE_DIR']}";
     $source_langs = array(
         array('base', $ac['srcdir'], array('manual.xml', 'funcindex.xml')),
-        array('en', $en_dir, find_xml_files($en_dir)),
+        array($ac['LANG_BASE_DIR'], $base_dir, find_xml_files($base_dir)),
     );
-    if ($ac['LANG'] !== 'en') {
+    if (!is_single_language()) {
         $lang_dir = "{$ac['rootdir']}/{$ac['LANGDIR']}";
         $source_langs[] = array($ac['LANG'], $lang_dir, find_xml_files($lang_dir));
     }
@@ -1339,7 +1368,7 @@ function phd_version()
         $globdir = dirname($ac["GENERATE"]) . "/{../../}versions.xml";
     }
     else {
-        $globdir = $ac['rootdir'] . '/en';
+        $globdir = "{$ac['rootdir']}/{$ac['LANG_BASE_DIR']}";
         $globdir .= "/*/*/versions.xml";
     }
     echo ' transforming,';
