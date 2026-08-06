@@ -611,73 +611,52 @@ dtd_conf_entities();
 
 function dtd_conf_entities()
 {
-    function dtd_pe_body( string $filename = '' )
+    function dtd_pe_load( string $name , string $filename ) : string
     {
         if ( file_exists( $filename ) )
         {
             $filename = realpain( $filename );
-            return "SYSTEM '$filename'";
+            $ret  = "<!ENTITY % $name SYSTEM '{$filename}'>\n";
+            $ret .= "%{$name};\n\n";
+            return $ret;
         }
-        return "''";
+        return "";
     }
 
-    global $ac;
-    $lang = $ac["LANG"];
+    // After DTD entities are converted to XML, all this can be reduced to:
+    // $contents .= dtd_pe_load( "text-entities" , __DIR__ . '/temp/text-entities.dtd' );
+    // $contents .= dtd_pe_load( "file-entities" , __DIR__ . '/temp/file-entities.dtd' );
 
-    // When all is converted to XML Entities,
-    // all this can be reduced to:
-    // $ent1 = dtd_pe_body( __DIR__ . '/temp/text-entities.ent' );
-    // $ent2 = dtd_pe_body( __DIR__ . '/temp/file-entities.ent' );
+    $base = $GLOBALS['ac']['LANG_BASE_DIR'];
+    $lang = $GLOBALS['ac']["LANG"];
 
-    $baseEnt1 = dtd_pe_body( __DIR__ . '/entities/global.ent' );
-    $baseEnt2 = dtd_pe_body( __DIR__ . '/temp/file-entities.ent' );
-    $baseEnt3 = dtd_pe_body( __DIR__ . '/temp/entities.ent' );
+    $contents = "";
 
-    $base = $ac['LANG_BASE_DIR'];
+    $contents .= "<!ENTITY LANG '{$lang}'>\n\n";
 
-    $langOne1 = dtd_pe_body( __DIR__ . "/../$base/language-defs.ent" );
-    $langOne2 = dtd_pe_body( __DIR__ . "/../$base/language-snippets.ent" );
-    $langOne3 = dtd_pe_body( __DIR__ . "/../$base/extensions.ent" );
+    $contents .= dtd_pe_load( "language-defs"       , __DIR__ . "/../$base/language-defs.ent" );
+    $contents .= dtd_pe_load( "language-snippets"   , __DIR__ . "/../$base/language-snippets.ent" );
+    $contents .= dtd_pe_load( "language-extensions" , __DIR__ . "/../$base/extensions.ent" );
 
-    if ( is_single_language() )
+    if ( ! is_single_language() )
     {
-        $langTwo1 = dtd_pe_body();
-        $langTwo2 = dtd_pe_body();
-        $langTwo3 = dtd_pe_body();
-    }
-    else
-    {
-        $langTwo1 = dtd_pe_body( __DIR__ . "/../$lang/language-defs.ent" );
-        $langTwo2 = dtd_pe_body( __DIR__ . "/../$lang/language-snippets.ent" );
-        $langTwo3 = dtd_pe_body( __DIR__ . "/../$lang/extensions.ent" );
+        $contents .= dtd_pe_load( "translation-defs"       , __DIR__ . "/../$lang/language-defs.ent" );
+        $contents .= dtd_pe_load( "translation-snippets"   , __DIR__ . "/../$lang/language-snippets.ent" );
+        $contents .= dtd_pe_load( "translation-extensions" , __DIR__ . "/../$lang/extensions.ent" );
     }
 
-    if ( $ac['CHMENABLED'] == 'yes' )
-        $chmpath = dtd_pe_body( __DIR__ . "/chm/manual.chm.xml" );
+    $contents .= dtd_pe_load( "base-entities" , __DIR__ . '/entities/global.ent' );
+    $contents .= dtd_pe_load( "text-entities" , __DIR__ . '/temp/text-entities.dtd' );
+    $contents .= dtd_pe_load( "file-entities" , __DIR__ . '/temp/file-entities.dtd' );
+
+    if ( $GLOBALS['ac']['CHMENABLED'] == 'yes' )
+        $contents = dtd_pe_body( "manual.chmonly" , __DIR__ . "/chm/manual.chm.xml" );
     else
-        $chmpath = dtd_pe_body();
-
-    $conf = [];
-
-    $conf[] = "<!ENTITY LANG '$lang'>";
-
-    $conf[] = "<!ENTITY manual.chmonly           $chmpath>";
-
-    $conf[] = "<!ENTITY % base-entities          $baseEnt1>";
-    $conf[] = "<!ENTITY % file-entities          $baseEnt2>";
-    $conf[] = "<!ENTITY % text-entities          $baseEnt3>";
-
-    $conf[] = "<!ENTITY % language-defs          $langOne1>";
-    $conf[] = "<!ENTITY % language-snippets      $langOne2>";
-    $conf[] = "<!ENTITY % language-extensions    $langOne3>";
-
-    $conf[] = "<!ENTITY % translation-defs       $langTwo1>";
-    $conf[] = "<!ENTITY % translation-snippets   $langTwo2>";
-    $conf[] = "<!ENTITY % translation-extensions $langTwo3>";
+        $contents .= "<!ENTITY manual.chmonly ''>\n";
 
     $outdir = __DIR__ . "/../$base/temp";
     realpain( $outdir , mkdir: true );
-    file_put_contents( "{$outdir}/conf.dtd" , implode( "\n" , $conf ) );
+    file_put_contents( "{$outdir}/conf.dtd" , $contents );
 }
 
 function dtd_file_entities()
@@ -750,7 +729,11 @@ function dom_load( DOMDocument $dom , string $filename , bool $firstLoad ) : boo
 {
     $filename = realpath( $filename );
     $options = LIBXML_NOENT | LIBXML_COMPACT | LIBXML_BIGLINES | LIBXML_PARSEHUGE;
-    return $dom->load( $filename , $options );
+    $ret = $dom->load( $filename , $options );
+
+    $dom->documentElement->setAttribute( 'xml:lang' , $GLOBALS['ac']["LANG"] );
+
+    return $ret;
 }
 
 function dom_saveload( DOMDocument $dom , string $filename = "" ) : string
