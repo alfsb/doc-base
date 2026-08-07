@@ -650,7 +650,7 @@ function dtd_conf_entities()
     $contents .= dtd_pe_load( "file-entities" , __DIR__ . '/temp/file-entities.dtd' );
 
     if ( $GLOBALS['ac']['CHMENABLED'] == 'yes' )
-        $contents = dtd_pe_body( "manual.chmonly" , __DIR__ . "/chm/manual.chm.xml" );
+        $contents = dtd_pe_load( "manual.chmonly" , __DIR__ . "/chm/manual.chm.xml" );
     else
         $contents .= "<!ENTITY manual.chmonly ''>\n";
 
