@@ -29,8 +29,9 @@ The files are created at:
 - doc-base/temp/file-entites.ent
 - doc-base/temp/file-entites/dir.dir.ent
 
-The file entity for directories (file listings) are keep as individual
-files, to avoid these libxml errors, in some OS/versions:
+The file entity for directory listings is kept as an separate files,
+instead of a monolithic one, to avoid these libxml errors, in some
+OS and/or libxml versions:
 
 - Detected an entity reference loop [1]
 - Maximum entity amplification factor exceeded [2]
