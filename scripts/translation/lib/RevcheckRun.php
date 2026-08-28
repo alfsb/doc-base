@@ -85,12 +85,7 @@ class RevcheckRun
             if ( $target == null )
             {
                 if ( RevcheckIgnore::byMark( "{$this->sourceDir}/{$source->file}" ) )
-                {
-                    $source->status = RevcheckStatus::DoNotTranslate;
-                    $this->filesDoNotTranslate[] = $source;
-                    $this->addData( $source , null );
                     continue;
-                }
 
                 $source->status = RevcheckStatus::Untranslated;
                 $this->filesUntranslated[] = $source;
@@ -98,12 +93,17 @@ class RevcheckRun
                 continue;
             }
 
+            // Do not translate
+
+            if ( $target->revtag->doNotTranslate )
+            {
+                $source->status = RevcheckStatus::DoNotTranslate;
+                $this->filesDoNotTranslate[] = $source;
+                $this->addData( $source , null );
+                continue;
+            }
+
             // XmlBroken
-            //
-            // Checked before the revtag, as a file that does not parse is
-            // the more pressing problem. The revtag is still carried over:
-            // libxml recovers, so the comments are read even from a
-            // misaligned file, and an empty one has nothing to read anyway.
 
             if ( $target->xmlError != "" )
             {
